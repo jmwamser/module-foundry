@@ -14,11 +14,11 @@
     "require": {
         "php": "^8.1",
         "codeception/codeception": "^5.0",
-        "zenstruck/foundry": "^1.36",
+        "zenstruck/foundry": "^1.36 || ^2.0",
         "symfony/http-kernel": "^6.4 || ^7.0"
     },
     "require-dev": {
-        "codeception/module-doctrine2": "^3.0",
+        "codeception/module-doctrine": "^3.1",
         "codeception/module-symfony": "^3.1",
         "phpstan/phpstan": "^1.10",
         "friendsofphp/php-cs-fixer": "^3.9",

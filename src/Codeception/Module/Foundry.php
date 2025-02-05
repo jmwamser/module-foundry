@@ -15,10 +15,8 @@ use ReflectionException;
 use Symfony\Component\DependencyInjection\ContainerInterface as SymfonyContainerInterface;
 use Symfony\Component\HttpKernel\KernelInterface;
 use Zenstruck\Foundry\Factory;
-use Zenstruck\Foundry\ModelFactory;
-use Zenstruck\Foundry\Proxy;
-use Zenstruck\Foundry\Test\DatabaseResetter;
-use Zenstruck\Foundry\Test\TestState;
+use Zenstruck\Foundry\ObjectFactory as BaseFactory;
+use Zenstruck\Foundry\Object\Proxy;
 
 /**
  * Foundry Module allows you to easily generate and create test data using [**Foundry**](https://github.com/zenstruck/foundry).
@@ -28,17 +26,11 @@ use Zenstruck\Foundry\Test\TestState;
  *
  * ```json
  * {
- *  "zenstruck/foundry": "^1.36",
+ *  "zenstruck/foundry": "^1.36 || ^2.0",
  * }
  * ```
  *
- * Generation rules can be defined in a factories file.
- * Follow [Foundry documentation](https://github.com/zenstruck/foundry) to set valid rules.
- * Random data provided by [Faker](https://github.com/FakerPHP/Faker) library.
- *
- * Configure this module to load factory definitions from a directory.
- * You should also specify Doctrine ORM as a dependency.
- *
+ * For Foundry v1.x:
  * ```yaml
  * modules:
  *     enabled:
@@ -54,89 +46,223 @@ use Zenstruck\Foundry\Test\TestState;
  *             depends: Symfony
  *             cleanup: true
  * ```
+ *
+ * For Foundry v2.x, additional setup is required:
+ * 1. Install DAMA doctrine test bundle: `composer require --dev dama/doctrine-test-bundle`
+ * 2. Add to codeception.yml:
+ * ```yaml
+ * extensions:
+ *     enabled:
+ *         - DAMA\DoctrineTestBundle\Codeception\Extension
+ * ```
  */
-class Foundry extends AbstractFoundryConfiguration
+class Foundry extends Module implements DependsOnModule, RequiresPackage
 {
+    protected array $config = [
+        'cleanup' => false,
+        'factories' => null
+    ];
+
+    protected string $dependencyMessage = <<<EOF
+        ORM module (like Doctrine2) or Framework module with ActiveRecord support is required:
+        --
+        modules:
+            enabled:
+                - Foundry:
+                    depends: Doctrine2
+        --
+    EOF;
+
+    public Factory $foundry;
+    protected bool $isVersion2;
+
+    /**
+     * ORM module on which we depend on.
+     */
+    public ORM|Module $ormModule;
+
+    public function __construct($moduleContainer, $config = null)
+    {
+        parent::__construct($moduleContainer, $config);
+        $this->isVersion2 = $this->isFoundryVersion2();
+    }
+
+    protected function isFoundryVersion2(): bool
+    {
+        return class_exists('Zenstruck\Foundry\Object\Proxy');
+    }
+
+    public function _afterSuite(): void
+    {
+        if ($this->getCleanupConfig() === false) {
+            return;
+        }
+
+        if (!$this->isVersion2) {
+            $this->debugSection('Foundry', 'Resetting database schema.');
+            $databaseResetter = 'Zenstruck\Foundry\Test\DatabaseResetter';
+            if (class_exists($databaseResetter)) {
+                $databaseResetter::resetSchema($this->getSymfonyKernel());
+            }
+        }
+    }
+
+    public function _beforeSuite($settings = []): void
+    {
+        $this->debugSection('Foundry', 'Booting foundry.');
+        /** @var ContainerInterface $container */
+        $container = $this->getSymfonyContainer();
+
+        if ($this->isVersion2) {
+            Factory::boot($container);
+        } else {
+            $testState = 'Zenstruck\Foundry\Test\TestState';
+            if (class_exists($testState)) {
+                $testState::bootFromContainer($container);
+            }
+        }
+    }
+
+    public function _depends(): array
+    {
+        return [
+            'Codeception\Lib\Interfaces\ORM' => $this->dependencyMessage,
+        ];
+    }
+
+    public function _inject(ORM $orm): void
+    {
+        $this->ormModule = $orm;
+    }
+
+    public function _requires(): array
+    {
+        return [
+            'Zenstruck\Foundry\Factory' => '"zenstruck/foundry": "^1.36 || ^2.0"',
+            'Zenstruck\Foundry\Object\Proxy' => '"zenstruck/foundry": "^2.0"',
+            'Zenstruck\Foundry\Test\DatabaseResetter' => '"zenstruck/foundry": "^1.36"',
+        ];
+    }
+
+    protected function getCleanupConfig(): bool
+    {
+        return $this->config['cleanup'] && $this->ormModule->_getConfig('cleanup');
+    }
+
+    /**
+     * @param Proxy[] $proxies
+     * @return object[]
+     */
+    protected function getEntitiesByProxies(array $proxies): array
+    {
+        $entities = [];
+        foreach ($proxies as $proxy) {
+            $entities[] = $proxy->object();
+        }
+        return $entities;
+    }
+
+    protected function getFactoryClassByEntityClass(string $entity): ?string
+    {
+        foreach ($this->config['factories'] as $factory) {
+            try {
+                $modelFactory = new ReflectionClass($factory);
+                $getClassMethod = $modelFactory->getMethod('getClass');
+                $entityName = $getClassMethod->invoke(null);
+                if ($entity === $entityName) {
+                    return $factory;
+                }
+            } catch (ReflectionException $e) {
+                $this->fail($e->getMessage());
+            }
+        }
+
+        return null;
+    }
+
+    protected function createFactory(string $factoryClass, array $attributes = []): BaseFactory
+    {
+        if ($this->isVersion2) {
+            return new $factoryClass($attributes);
+        }
+        return $factoryClass::new($attributes);
+    }
+
+    public function onReconfigure($settings = []): void
+    {
+        if ($this->getCleanupConfig() && !$this->isVersion2) {
+            $databaseResetter = 'Zenstruck\Foundry\Test\DatabaseResetter';
+            if (class_exists($databaseResetter)) {
+                $databaseResetter::resetSchema($this->getSymfonyKernel());
+            }
+        }
+        $this->_beforeSuite($settings);
+    }
+
+    protected function getModuleSymfony(): ?Symfony
+    {
+        try {
+            /** @var Symfony $symfonyModule */
+            $symfonyModule = $this->getModule('Symfony');
+            return $symfonyModule;
+        } catch (Exception $exception) {
+            return null;
+        }
+    }
+
+    protected function getSymfonyContainer(): SymfonyContainerInterface
+    {
+        return $this->getModuleSymfony()->_getContainer();
+    }
+
+    protected function getSymfonyKernel(): KernelInterface
+    {
+        return $this->getModuleSymfony()->kernel;
+    }
+
     /**
      * Generates and saves a record.
-     *
-     * ```php
-     * $I->have(User::class); // creates user
-     * $I->have(User::class, ['is_active' => true]); // creates active user
-     * ```
-     *
-     * Returns an instance of created user.
-     *
-     * @param string $entity
-     * @param array $attributes
-     * @return object
      */
     public function have(string $entity, array $attributes = []): object
     {
         $factoryClass = $this->getFactoryClassByEntityClass($entity);
-        /** @var ModelFactory $factory */
-        $factory = $factoryClass::new($attributes);
+        /** @var BaseFactory $factory */
+        $factory = $this->createFactory($factoryClass, $attributes);
         return $factory->create()->object();
     }
 
     /**
-     * Generates and saves a record multiple times.
-     *
-     * ```php
-     * $I->haveMultiple(User::class, 10); // create 10 users
-     * $I->haveMultiple(User::class, 10, ['is_active' => true]); // create 10 active users
-     * ```
-     *
-     * @param string $entity
-     * @param int $times
-     * @param array $attributes
-     * @return object[]
+     * Generates and saves multiple records.
      */
     public function haveMultiple(string $entity, int $times, array $attributes = []): array
     {
         $factoryClass = $this->getFactoryClassByEntityClass($entity);
-        /** @var ModelFactory $factory */
-        $factory = new $factoryClass();
+        /** @var BaseFactory $factory */
+        $factory = $this->createFactory($factoryClass);
         $proxies = $factory->createMany($times, $attributes);
         return $this->getEntitiesByProxies($proxies);
     }
 
     /**
-     * Generates a record instance.
-     *
-     * This does not save it in the database. Use `have` for that.
-     *
-     * ```php
-     * $user = $I->make(User:class); // return User instance
-     * $activeUser = $I->make(User:class, ['is_active' => true]); // return active user instance
-     * ```
-     *
-     * Returns an instance of created user without creating a record in database.
-     *
-     * @param string $entity
-     * @param array $attributes
-     * @return object
+     * Generates a record instance without persisting.
      */
     public function make(string $entity, array $attributes = []): object
     {
         $factoryClass = $this->getFactoryClassByEntityClass($entity);
-        /** @var ModelFactory $factory */
-        $factory = new $factoryClass();
+        /** @var BaseFactory $factory */
+        $factory = $this->createFactory($factoryClass);
         $memoryFactory = $factory->withoutPersisting();
         return $memoryFactory->create($attributes)->object();
     }
 
     /**
-     * @param string $entity
-     * @param int $times
-     * @param array $attributes
-     * @return object[]
+     * Generates multiple record instances without persisting.
      */
     public function makeMultiple(string $entity, int $times, array $attributes = []): array
     {
         $factoryClass = $this->getFactoryClassByEntityClass($entity);
-        /** @var ModelFactory $factory */
-        $factory = new $factoryClass();
+        /** @var BaseFactory $factory */
+        $factory = $this->createFactory($factoryClass);
         $memoryFactory = $factory->withoutPersisting();
         $proxies = $memoryFactory->createMany($times, $attributes);
         return $this->getEntitiesByProxies($proxies);

@@ -13,6 +13,16 @@ A Codeception module for [**Foundry**](https://github.com/zenstruck/foundry) lib
 composer require "tavoniievez/module-foundry" --dev
 ```
 
+### For Foundry v1.x
+No additional setup required.
+
+### For Foundry v2.x
+1. Install DAMA doctrine test bundle:
+```bash
+composer require --dev dama/doctrine-test-bundle
+```
+
+
 ## License
 
 `Codeception Module Foundry` is open-sourced software licensed under the [MIT](/LICENSE) License.
