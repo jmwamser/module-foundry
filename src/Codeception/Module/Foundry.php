@@ -137,7 +137,7 @@ class Foundry extends Module implements DependsOnModule, RequiresPackage
 
     public function _requires(): array
     {
-        if ($this->isVersion2) {
+        if ($this->isFoundryVersion2()) {
             return [
                 'Zenstruck\Foundry\Factory' => '"zenstruck/foundry": "^1.36 || ^2.0"',
                 'Zenstruck\Foundry\Object\Proxy' => '"zenstruck/foundry": "^2.0"',
