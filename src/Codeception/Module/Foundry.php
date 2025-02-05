@@ -137,6 +137,14 @@ class Foundry extends Module implements DependsOnModule, RequiresPackage
 
     public function _requires(): array
     {
+        if ($this->isVersion2) {
+            return [
+                'Zenstruck\Foundry\Factory' => '"zenstruck/foundry": "^1.36 || ^2.0"',
+                'Zenstruck\Foundry\Object\Proxy' => '"zenstruck/foundry": "^2.0"',
+                "dama/doctrine-test-bundle" => "^8.2"
+            ];
+        }
+
         return [
             'Zenstruck\Foundry\Factory' => '"zenstruck/foundry": "^1.36 || ^2.0"',
             'Zenstruck\Foundry\Object\Proxy' => '"zenstruck/foundry": "^2.0"',
