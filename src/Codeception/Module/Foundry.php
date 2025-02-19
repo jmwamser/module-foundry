@@ -64,12 +64,12 @@ class Foundry extends Module implements DependsOnModule, RequiresPackage
     ];
 
     protected string $dependencyMessage = <<<EOF
-        ORM module (like Doctrine2) or Framework module with ActiveRecord support is required:
+        ORM module (like Doctrine) or Framework module with ActiveRecord support is required:
         --
         modules:
             enabled:
                 - Foundry:
-                    depends: Doctrine2
+                    depends: Doctrine
         --
     EOF;
 
@@ -139,15 +139,14 @@ class Foundry extends Module implements DependsOnModule, RequiresPackage
     {
         if ($this->isFoundryVersion2()) {
             return [
-                'Zenstruck\Foundry\Factory' => '"zenstruck/foundry": "^1.36 || ^2.0"',
+                'Zenstruck\Foundry\Factory' => '"zenstruck/foundry": "^2.0"',
                 'Zenstruck\Foundry\Object\Proxy' => '"zenstruck/foundry": "^2.0"',
                 "dama/doctrine-test-bundle" => "^8.2"
             ];
         }
 
         return [
-            'Zenstruck\Foundry\Factory' => '"zenstruck/foundry": "^1.36 || ^2.0"',
-            'Zenstruck\Foundry\Object\Proxy' => '"zenstruck/foundry": "^2.0"',
+            'Zenstruck\Foundry\Factory' => '"zenstruck/foundry": "^1.36"',
             'Zenstruck\Foundry\Test\DatabaseResetter' => '"zenstruck/foundry": "^1.36"',
         ];
     }
